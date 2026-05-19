@@ -19,11 +19,12 @@ router.post('/extract', async (req: Request, res: Response, next: NextFunction) 
     }
 
     // 1. Verify the parent audit session exists
-    const sessionCheck = await db.select().from(auditSessions).where(eq(auditSessions.id, sessionId));
-    if (sessionCheck.length === 0) {
+    const sessionCheck = await db.select().from(auditSessions);
+    const existingSession = sessionCheck.find(session => session.id === sessionId);
+    
+    if (!existingSession) {
       return res.status(404).json({ error: "The provided sessionId does not exist." });
     }
-
     // 2. Pass text through our Gemini Extraction Engine
     const extractedData = await extractInventoryFromUrdu(rawText);
 
