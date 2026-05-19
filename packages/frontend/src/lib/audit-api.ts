@@ -30,9 +30,30 @@ export const auditApi = {
     return result.data && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : [result]);
   },
 
-  extractFile: async (file: File): Promise<InventoryItem[]> => {
+  // extractFile: async (file: File): Promise<InventoryItem[]> => {
+  //   const fd = new FormData();
+  //   fd.append("file", file);
+  //   fd.append("sessionId", DEFAULT_SESSION_ID);
+
+  //   const res = await fetch(`${API_BASE}/extract/file`, { 
+  //     method: "POST", 
+  //     body: fd 
+  //   });
+  //   if (!res.ok) throw new Error(`API ${res.status}`);
+    
+  //   const result = await res.json();
+  //   return result.data && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : [result]);
+  // },
+
+  // Update the definition to accept an array of files or a single file
+  extractFile: async (files: File | File[]): Promise<InventoryItem[]> => {
     const fd = new FormData();
-    fd.append("file", file);
+    const fileArray = Array.isArray(files) ? files : [files];
+
+    // Append every single file into the 'files' payload key field matching the backend array
+    fileArray.forEach((file) => {
+      fd.append("files", file);
+    });
     fd.append("sessionId", DEFAULT_SESSION_ID);
 
     const res = await fetch(`${API_BASE}/extract/file`, { 

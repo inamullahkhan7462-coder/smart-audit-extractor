@@ -45,31 +45,36 @@ export async function extractInventoryFromUrdu(contentInput: string | Buffer, mi
   }
 
   // Define a strict JSON schema so Gemini outputs exactly what our shared TypeScript engine expects
+  // Define a powerful array schema so Gemini can generate unlimited structured rows per image!
   const responseSchema: Schema = {
-    type: Type.OBJECT,
-    properties: {
-      originalUrduText: { 
-        type: Type.STRING, 
-        description: "The raw input string exactly as provided, or a concise text summary transcribing the specific line scanned from the source image." 
+    type: Type.ARRAY,
+    description: "List of all structured audit data points, weights, metadata attributes, and line items found on the document.",
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        originalUrduText: { 
+          type: Type.STRING, 
+          description: "The raw handwritten text string or field name exactly as written in Urdu/Roman-Urdu on the paper. Example: 'صافی وزن 1726' or 'گاڑی نمبر LRT 3894' or 'پہلا وزن 1932'." 
+        },
+        englishItemName: { 
+          type: Type.STRING, 
+          description: "The field identifier or item name translated into clean English capitals. Examples: 'NET WEIGHT', 'VEHICLE NUMBER', 'GROSS WEIGHT', 'TARE WEIGHT', 'PARTY NAME', 'SERIAL NUMBER'." 
+        },
+        quantity: { 
+          type: Type.NUMBER, 
+          description: "The literal numerical count, weight value, or serial index value parsed from the specific field. If the value contains characters (like vehicle license plates '3894'), strip letters and return only the numerical digits." 
+        },
+        unit: { 
+          type: Type.STRING, 
+          description: "The unit of measurement. Use 'kg' for weights, 'No.' for serial indexes/vehicle digits, or 'text' if it's a structural name identifier." 
+        },
+        confidenceScore: { 
+          type: Type.NUMBER, 
+          description: "Your reading assurance level between 0.00 and 1.00." 
+        }
       },
-      englishItemName: { 
-        type: Type.STRING, 
-        description: "The title of the inventory item translated cleanly into English capital casing. Example: 'WHEAT BAG' or 'SOAP BOX'." 
-      },
-      quantity: { 
-        type: Type.NUMBER, 
-        description: "The exact numerical count or amount parsed from the content source." 
-      },
-      unit: { 
-        type: Type.STRING, 
-        description: "The physical unit of measurement translated to English. Examples: 'bags', 'kg', 'boxes', 'units', 'liters'." 
-      },
-      confidenceScore: { 
-        type: Type.NUMBER, 
-        description: "Your confidence level in this extraction between 0.00 (completely uncertain) and 1.00 (absolutely certain)." 
-      }
-    },
-    required: ["originalUrduText", "englishItemName", "quantity", "unit", "confidenceScore"],
+      required: ["originalUrduText", "englishItemName", "quantity", "unit", "confidenceScore"],
+    }
   };
 
   try {
