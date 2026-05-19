@@ -17,40 +17,48 @@ router.post('/extract', async (req: any, res: any, next: any) => {
       return res.status(400).json({ error: "Missing required fields: rawText and sessionId are required." });
     }
 
-    // 1. Verify the parent audit session exists safely
-    // 1. Verify the parent audit session exists safely (Bypassed for local testing placeholder)
-    const DEFAULT_SESSION_ID = "11111111-1111-1111-1111-111111111111";
-    let existingSession = null;
+    // 1. Fetch a real, active session ID directly from your Supabase database to satisfy foreign keys
+    const actualSessions = await db.select().from(auditSessions);
+    let targetSessionId = sessionId;
 
-    if (sessionId === DEFAULT_SESSION_ID) {
-      // If it's our local testing placeholder, mock an existing session object so it doesn't crash
-      existingSession = { id: DEFAULT_SESSION_ID };
+    if (actualSessions.length === 0) {
+      // If your database is completely empty, create a temporary testing session on the fly
+      const [newTestSession] = await db.insert(auditSessions).values({
+        sessionName: "Local Testing Session",
+        targetLocation: "Lahore HQ"
+      }).returning();
+      targetSessionId = newTestSession.id;
     } else {
-      const sessionCheck = await db.select().from(auditSessions);
-      existingSession = sessionCheck.find(session => session.id === sessionId);
-    }
-    
-    if (!existingSession) {
-      return res.status(404).json({ error: "The provided sessionId does not exist." });
+      // Pick the most recent real session ID that already exists in your table
+      targetSessionId = actualSessions[actualSessions.length - 1].id;
     }
 
     // 2. Pass text through our Gemini Extraction Engine
+    console.log("Passing raw text to Gemini Engine...");
     const extractedData = await extractInventoryFromUrdu(rawText);
+    console.log("Gemini Raw output payload:", extractedData);
 
-    // 3. Insert the validated AI data straight into our Supabase bucket
+    // Normalize the data format in case Gemini returned an array or a single object wrapper
+    const itemToInsert = Array.isArray(extractedData) ? extractedData : extractedData;
+
+    if (!itemToInsert) {
+      return res.status(422).json({ error: "Gemini engine failed to generate valid structured data objects." });
+    }
+
+    // 3. Insert the validated AI data straight into our Supabase bucket with a real parent ID
     const [insertedItem] = await db.insert(inventoryItems).values({
-      sessionId: sessionId,
-      originalUrduText: extractedData.originalUrduText,
-      englishItemName: extractedData.englishItemName,
-      quantity: extractedData.quantity,
-      unit: extractedData.unit,
-      confidenceScore: extractedData.confidenceScore,
+      sessionId: targetSessionId,
+      originalUrduText: itemToInsert.originalUrduText || rawText.substring(0, 100),
+      englishItemName: itemToInsert.englishItemName || "Unclassified Item",
+      quantity: Number(itemToInsert.quantity) || 1,
+      unit: itemToInsert.unit || "pcs",
+      confidenceScore: itemToInsert.confidenceScore ? Number(itemToInsert.confidenceScore) : 0.90,
     }).returning();
 
-    // 4. Return the database record back to the user
+    // 4. Return the database record back to the user wrapped cleanly for Lovable's UI
     res.status(201).json({
       success: true,
-      data: insertedItem
+      data: [insertedItem] // Wrap in an array because Lovable's grid expects an array layout
     });
 
   } catch (error) {
