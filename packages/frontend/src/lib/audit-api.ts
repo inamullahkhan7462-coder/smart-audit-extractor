@@ -31,7 +31,17 @@ export const auditApi = {
   },
 
   extractFile: async (file: File): Promise<InventoryItem[]> => {
-    // Since our backend currently handles the text extraction route, we redirect the user to the text tab
-    throw new Error("Backend file upload endpoint is not registered yet. Please use the text input/paste box tab to extract your data!");
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("sessionId", DEFAULT_SESSION_ID);
+
+    const res = await fetch(`${API_BASE}/extract/file`, { 
+      method: "POST", 
+      body: fd 
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    
+    const result = await res.json();
+    return result.data && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : [result]);
   },
 };

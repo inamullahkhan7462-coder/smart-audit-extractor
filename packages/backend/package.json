@@ -1,32 +1,34 @@
 {
-    "name": "@audit-extractor/backend",
-    "version": "1.0.0",
-    "private": true,
-    "type": "module",
-    "main": "dist/index.js",
-    "scripts": {
-      "dev": "tsx watch src/index.ts",
-      "build": "tsc -p tsconfig.json",
-      "start": "node dist/index.js",
-      "db:generate": "drizzle-kit generate:pg",
-      "db:migrate": "drizzle-kit push:pg"
-    },
-    "dependencies": {
-      "@google/genai": "^2.4.0",
-      "@audit-extractor/shared": "workspace:*",
-      "cors": "^2.8.5",
-      "dotenv": "^16.4.5",
-      "drizzle-orm": "^0.30.0",
-      "express": "^5.0.0",
-      "pg": "^8.11.5"
-    },
-    "devDependencies": {
-      "@types/cors": "^2.8.17",
-      "@types/express": "^5.0.0",
-      "@types/node": "^20.11.0",
-      "@types/pg": "^8.11.4",
-      "drizzle-kit": "^0.20.14",
-      "tsx": "^4.7.1",
-      "typescript": "^5.3.3"
-    }
+  "name": "@audit-extractor/backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "db:generate": "drizzle-kit generate:pg",
+    "db:migrate": "drizzle-kit push:pg"
+  },
+  "dependencies": {
+    "@audit-extractor/shared": "workspace:*",
+    "@google/genai": "^2.4.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.30.0",
+    "express": "^5.0.0",
+    "multer": "^2.1.1",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.4",
+    "drizzle-kit": "^0.20.14",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
   }
+}
