@@ -1,14 +1,16 @@
 {
-  "name": "Smart_Audit_Extractor",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "smart-audit-extractor",
+  "private": true,
+  "packageManager": "pnpm@11.1.2",
+  "engines": {
+    "node": ">=24.0.0"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "scripts": {
+    "dev": "pnpm --filter=@audit-extractor/* --parallel dev",
+    "build": "pnpm --filter=@audit-extractor/* build",
+    "db:generate": "pnpm --filter=@audit-extractor/backend db:generate",
+    "db:migrate": "pnpm --filter=@audit-extractor/backend db:migrate"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
