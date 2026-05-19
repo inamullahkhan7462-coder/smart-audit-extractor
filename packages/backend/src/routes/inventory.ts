@@ -1,8 +1,7 @@
-import { Router, Request, Response, NextFunction } from 'express';
+import { Router } from 'express';
 import { db } from '../db/index.js';
 import { inventoryItems, auditSessions } from '../db/schema.js';
 import { extractInventoryFromUrdu } from '../services/aiEngine.js';
-import { eq } from 'drizzle-orm';
 
 const router = Router();
 
@@ -10,7 +9,7 @@ const router = Router();
  * POST /api/inventory/extract
  * Description: Processes raw text using Gemini and saves the outcome to the DB
  */
-router.post('/extract', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/extract', async (req: any, res: any, next: any) => {
   try {
     const { rawText, sessionId } = req.body;
 
@@ -18,13 +17,14 @@ router.post('/extract', async (req: Request, res: Response, next: NextFunction) 
       return res.status(400).json({ error: "Missing required fields: rawText and sessionId are required." });
     }
 
-    // 1. Verify the parent audit session exists
+    // 1. Verify the parent audit session exists safely
     const sessionCheck = await db.select().from(auditSessions);
     const existingSession = sessionCheck.find(session => session.id === sessionId);
     
     if (!existingSession) {
       return res.status(404).json({ error: "The provided sessionId does not exist." });
     }
+
     // 2. Pass text through our Gemini Extraction Engine
     const extractedData = await extractInventoryFromUrdu(rawText);
 
@@ -45,7 +45,7 @@ router.post('/extract', async (req: Request, res: Response, next: NextFunction) 
     });
 
   } catch (error) {
-    next(error); // Caught natively by Express 5 error handler middleware
+    next(error); 
   }
 });
 

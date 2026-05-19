@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 import { db } from './db/index.js';
@@ -18,12 +18,12 @@ app.use(express.json());
 app.use('/api/inventory', inventoryRouter);
 
 // Base Health Probe
-app.get('/api/health', (req: Request, res: Response) => {
+app.get('/api/health', (req: any, res: any) => {
   res.json({ status: 'active', system: 'Smart Audit Extractor Engine' });
 });
 
-// Create a New Audit Session (Needed so we have a target ID bucket for our inventory)
-app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction) => {
+// Create a New Audit Session
+app.post('/api/sessions', async (req: any, res: any, next: any) => {
   try {
     const { sessionName, targetLocation } = req.body;
     
@@ -43,7 +43,7 @@ app.post('/api/sessions', async (req: Request, res: Response, next: NextFunction
 });
 
 // Fetch All Audit Sessions
-app.get('/api/sessions', async (req: Request, res: Response, next: NextFunction) => {
+app.get('/api/sessions', async (req: any, res: any, next: any) => {
   try {
     const sessions = await db.select().from(auditSessions);
     res.json(sessions);
@@ -53,7 +53,7 @@ app.get('/api/sessions', async (req: Request, res: Response, next: NextFunction)
 });
 
 // Global Fallback Error Interceptor
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+app.use((err: any, req: any, res: any, next: any) => {
   console.error("🚨 Unhandled Exception:", err.message || err);
   res.status(500).json({
     error: "Internal Server Fault",
