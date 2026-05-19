@@ -1,1 +1,1 @@
-import './packages/backend/src/index.ts';
+import './packages/backend/dist/index.js';
