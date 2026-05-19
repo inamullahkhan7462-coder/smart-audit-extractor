@@ -24,15 +24,17 @@ function Dashboard() {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [busy, setBusy] = useState(false);
 
-  const handleAnalyze = async ({ file, text }: { file: File | null; text: string }) => {
+  // ✅ Updated the argument keys from 'file' to 'files' to align with our new multi-upload schema
+  const handleAnalyze = async ({ files, text }: { files: File[]; text: string }) => {
     setBusy(true);
     try {
-      const result = file
-        ? await auditApi.extractFile(file)
+      const result = files.length > 0
+        ? await auditApi.extractFile(files) // Passes the complete file array to the server
         : await auditApi.extractText(text);
+      
       setItems(result);
       setStep("review");
-      toast.success(`Extracted ${result.length} item${result.length === 1 ? "" : "s"}`);
+      toast.success(`Extracted ${result.length} item${result.length === 1 ? "" : "s"} successfully!`);
     } catch (e) {
       console.warn(e);
       toast.error("Extraction failed. Check API connection.");
