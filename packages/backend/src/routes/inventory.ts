@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../db/index.js';
 import { inventoryItems, auditSessions } from '../db/schema.js';
 import { extractInventoryFromUrdu } from '../services/aiEngine.js';
@@ -10,7 +10,7 @@ const router = Router();
  * POST /api/inventory/extract
  * Description: Processes raw text using Gemini and saves the outcome to the DB
  */
-router.post('/extract', async (req, res, next) => {
+router.post('/extract', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { rawText, sessionId } = req.body;
 
