@@ -19,61 +19,52 @@ export const Route = createFileRoute("/")({
 
 type Step = "upload" | "review";
 
+// 🔍 Locate this function block inside your parent routing file (e.g., index.tsx)
 function Dashboard() {
   const [step, setStep] = useState<Step>("upload");
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  // Change the state definition parameter to 'any[]' temporarily 
+  // to prevent strict types from filtering dynamic data keys out!
+  const [items, setItems] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
 
-  // ✅ Updated the argument keys from 'file' to 'files' to align with our new multi-upload schema
   const handleAnalyze = async ({ files, text }: { files: File[]; text: string }) => {
     setBusy(true);
     try {
+      console.log("Submitting file assets to API wrapper...", files);
       const result = files.length > 0
-        ? await auditApi.extractFile(files) // Passes the complete file array to the server
+        ? await auditApi.extractFile(files)
         : await auditApi.extractText(text);
       
-      setItems(result);
-      setStep("review");
-      toast.success(`Extracted ${result.length} item${result.length === 1 ? "" : "s"} successfully!`);
+      console.log("Raw array returned to parent view state engine:", result);
+
+      // Verify that we received an array before updating the state grid
+      if (result && result.length > 0) {
+        setItems(result);
+        setStep("review");
+        toast.success(`Loaded dynamic horizontal table matrix!`);
+      } else {
+        toast.error("AI completed processing but returned an empty dataset container.");
+      }
     } catch (e) {
-      console.warn(e);
-      toast.error("Extraction failed. Check API connection.");
+      console.error("Extraction error in parent dashboard processor:", e);
+      toast.error("Extraction failed. Check API connection lines.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full">
-      <Toaster theme="dark" position="top-right" />
-      <div className="mx-auto max-w-[1440px] px-6 py-8">
-        <header className="flex items-center justify-between mb-12">
-          <div className="flex items-center gap-3">
-            <div className="size-10 rounded-2xl grid place-items-center bg-gradient-to-br from-primary via-violet-500 to-accent glow-indigo">
-              <ScanLine className="size-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-base font-semibold tracking-tight">Smart Audit & Inventory Extractor</h1>
-              <p className="text-xs text-muted-foreground">Upload → Review → Export</p>
-            </div>
-          </div>
-
-          <Stepper step={step} />
-        </header>
-
-        <main className="relative">
-          <div
-            key={step}
-            className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {step === "upload" ? (
-              <UploadStep busy={busy} onAnalyze={handleAnalyze} />
-            ) : (
-              <ReviewStep items={items} setItems={setItems} onBack={() => setStep("upload")} />
-            )}
-          </div>
-        </main>
+    // ... your current header return markup stay exactly the same!
+    <main className="relative">
+      <div key={step} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+        {step === "upload" ? (
+          <UploadStep busy={busy} onAnalyze={handleAnalyze} />
+        ) : (
+          // ✅ Double-check that items and setItems are passed cleanly down here
+          <ReviewStep items={items} setItems={setItems} onBack={() => setStep("upload")} />
+        )}
       </div>
-    </div>
+    </main>
   );
 }
 
