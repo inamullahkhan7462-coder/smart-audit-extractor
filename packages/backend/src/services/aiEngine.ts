@@ -5,29 +5,25 @@ dotenv.config();
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-/**
- * Dynamically extracts document data into a flattened horizontal matrix layout.
- * Supports any invoice, weight slip, or ledger template dynamically.
- */
 export async function extractInventoryFromUrdu(contentInput: string | Buffer, mimeType: string | null = null) {
   
   const baseInstructions = `
-    You are an expert bilingual financial auditor and advanced document data-modeling engine.
-    Your objective is to analyze the provided inventory/weight slip document and structure it horizontally.
+    You are an expert financial auditor and advanced document data modeling assistant.
+    Your objective is to analyze the provided weight slip / invoice voucher and flatten it into a horizontal database row.
     
-    EXTRACTION RULES:
-    1. Scan the document completely and identify all core informational fields (e.g., Serial Number, Date, Vehicle Number, Weights, Party Name).
-    2. Dynamically determine clean, English column headers for all discovered attributes. 
-    3. Translate all Urdu/Roman-Urdu keys cleanly into English Capital Casing (e.g., 'صافی وزن' becomes 'NET WEIGHT', 'گاڑی نمبر' becomes 'VEHICLE NUMBER', 'پہلا وزن' becomes 'GROSS WEIGHT').
-    4. Provide the parsed values mapped perfectly inside a single rowData object matching your generated headers. 
-    5. Clean up the values: Keep full registration text for strings, but extract pure numbers for weights or digits where possible.
+    CRITICAL EXTRACTION GUIDELINES:
+    1. Scan the entire document for text pairs where a field label matches a value (e.g., 'صافی وزن' next to '1726', or 'SERIAL NUMBER' next to '138').
+    2. Dynamically generate an array of clean, English column headers that capture all discovered attributes.
+    3. Translate all Urdu or Roman-Urdu keys cleanly into English Capital Casing (e.g., 'صافی وزن' -> 'NET WEIGHT', 'گاڑی نمبر' -> 'VEHICLE NUMBER', 'پہلا وزن' -> 'GROSS WEIGHT', 'دوسرا وزن' -> 'TARE WEIGHT').
+    4. For EVERY document/image provided, you MUST construct an object inside the 'rows' array. The keys of this object must perfectly match your generated English headers.
+    5. Ensure values are mapped correctly: Keep full registration text for strings (e.g., 'LRT 3894'), but extract pure numbers for weights or digits (e.g., 1726, 138). Do not return empty objects.
   `;
 
   let contentsPayload: any[] = [];
 
   if (Buffer.isBuffer(contentInput) && mimeType) {
     contentsPayload = [
-      baseInstructions + `\nAnalyze the attached document image, determine its horizontal structural columns, and extract the text.`,
+      baseInstructions + `\nExtract the data from this document image and format it into the requested horizontal rows structure.`,
       {
         inlineData: {
           data: contentInput.toString("base64"),
@@ -37,29 +33,33 @@ export async function extractInventoryFromUrdu(contentInput: string | Buffer, mi
     ];
   } else {
     contentsPayload = [
-      baseInstructions + `\nAnalyze this raw log text input, determine the structural columns, and extract the row data:\n"${contentInput}"`
+      baseInstructions + `\nExtract the data from this raw text string:\n"${contentInput}"`
     ];
   }
 
-  // 🎯 The Magic Schema: Universal Flat Table Data Capture Structure
+  // 🎯 Updated Schema: Explicitly tracking an array of flat rows
   const responseSchema: any = {
     type: Type.OBJECT,
     properties: {
       headers: {
         type: Type.ARRAY,
         items: { type: Type.STRING },
-        description: "The list of dynamically discovered English column headers for this document layout. Example: ['SERIAL NUMBER', 'DATE', 'PARTY NAME', 'VEHICLE NUMBER', 'NET WEIGHT']"
+        description: "The list of dynamically discovered English column headers. Example: ['SERIAL NUMBER', 'DATE', 'PARTY NAME', 'VEHICLE NUMBER', 'NET WEIGHT']"
       },
-      rowData: {
-        type: Type.OBJECT,
-        description: "A single horizontal record row where keys match the items in the headers array. Example: {'SERIAL NUMBER': 138, 'VEHICLE NUMBER': 'LRT 3894', 'NET WEIGHT': 1726}",
+      rows: {
+        type: Type.ARRAY,
+        description: "An array containing one data object per processed invoice/image page.",
+        items: {
+          type: Type.OBJECT,
+          description: "Data object where keys perfectly match the items in the headers array.",
+        }
       },
       confidenceScore: {
         type: Type.NUMBER,
         description: "Overall extraction reliability score from 0.00 to 1.00."
       }
     },
-    required: ["headers", "rowData", "confidenceScore"],
+    required: ["headers", "rows", "confidenceScore"],
   };
 
   try {
@@ -69,7 +69,7 @@ export async function extractInventoryFromUrdu(contentInput: string | Buffer, mi
       config: {
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
-        temperature: 0.1, // Keeps mapping deterministic and highly accurate
+        temperature: 0.15,
       }
     });
 

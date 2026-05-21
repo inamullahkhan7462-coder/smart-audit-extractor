@@ -12,62 +12,63 @@ const upload = multer({ storage: multer.memoryStorage() });
  * Adapts dynamic schema payloads cleanly to your existing DB columns.
  */
 async function processAndSaveInventory(rawTextOrBuffer: string | Buffer, mimeType: string | null, sessionId: string) {
-  // 1. Resolve a valid session ID to satisfy foreign key constraints
-  const actualSessions = await db.select().from(auditSessions);
-  let targetSessionId = sessionId;
-
-  if (actualSessions.length === 0) {
-    const [newTestSession] = await db.insert(auditSessions).values({
-      sessionName: "Dynamic Layout Session",
-      targetLocation: "Auditing Hub"
-    }).returning();
-    targetSessionId = newTestSession.id;
-  } else {
-    targetSessionId = actualSessions[actualSessions.length - 1].id;
-  }
-
-  // 2. Call the upgraded, schema-agnostic Gemini Engine
-  console.log("Sending content payload to dynamic Gemini table processor...");
-  const dynamicResult = await extractInventoryFromUrdu(rawTextOrBuffer, mimeType);
-  console.log("Gemini parsed dynamic table data output:", dynamicResult);
-
-  const headers = dynamicResult.headers || [];
-  const singleRow = dynamicResult.rowData || {}; // 👈 Changed from rows to single row object
+    // 1. Resolve a valid session ID to satisfy foreign key constraints
+    const actualSessions = await db.select().from(auditSessions);
+    let targetSessionId = sessionId;
   
-  const savedItems = [];
-
-  // Skip execution if Gemini returned an empty record
-  if (Object.keys(singleRow).length > 0) {
-    // Create a clean summary string of all row entries to place inside originalUrduText column safely
-    const aggregatedDataString = Object.entries(singleRow)
-      .map(([key, val]) => `${key}: ${val}`)
-      .join(" | ");
-
-    // Identify primary weight markers for your default quantity/unit columns
-    const primaryWeightKey = headers.find((h: string) => h.includes("NET WEIGHT") || h.includes("WEIGHT") || h.includes("QUANTITY")) || "";
-    const calculatedQuantity = Number(singleRow[primaryWeightKey]) || 0;
-
-    // 3. Insert record into Supabase while saving the raw dynamic data payload
-    const [insertedItem] = await db.insert(inventoryItems).values({
-      sessionId: targetSessionId,
-      originalUrduText: aggregatedDataString, 
-      englishItemName: String(singleRow["PARTY NAME"] || singleRow["VEHICLE NUMBER"] || "FLAT RECORD").toUpperCase(),
-      quantity: calculatedQuantity,
-      unit: primaryWeightKey.includes("WEIGHT") ? "kg" : "pcs",
-      confidenceScore: dynamicResult.confidenceScore ? Number(dynamicResult.confidenceScore) : 0.95,
-    }).returning();
-
-    // Attach the dynamic payload directly to the item object so your frontend grid can build dynamic headers
-    const extendedItem = {
-      ...insertedItem,
-      dynamicHeaders: headers,
-      dynamicRow: singleRow
-    };
-    savedItems.push(extendedItem);
+    if (actualSessions.length === 0) {
+      const [newTestSession] = await db.insert(auditSessions).values({
+        sessionName: "Dynamic Layout Session",
+        targetLocation: "Auditing Hub"
+      }).returning();
+      targetSessionId = newTestSession.id;
+    } else {
+      targetSessionId = actualSessions[actualSessions.length - 1].id;
+    }
+  
+    // 2. Call the upgraded Gemini Engine
+    console.log("Sending content payload to dynamic Gemini table processor...");
+    const dynamicResult = await extractInventoryFromUrdu(rawTextOrBuffer, mimeType);
+    console.log("Gemini parsed dynamic table data output:", dynamicResult);
+  
+    const headers = dynamicResult.headers || [];
+    const extractedRows = dynamicResult.rows || []; // ✅ Reading the array of extracted rows
+    
+    const savedItems = [];
+  
+    // 3. Process and map each extracted row object
+    for (const row of extractedRows) {
+      if (Object.keys(row).length === 0) continue;
+  
+      // Create a clean summary string for storage in originalUrduText
+      const aggregatedDataString = Object.entries(row)
+        .map(([key, val]) => `${key}: ${val}`)
+        .join(" | ");
+  
+      // Identify primary weight fields for standard quantity metrics
+      const primaryWeightKey = headers.find((h: string) => h.includes("NET WEIGHT") || h.includes("WEIGHT") || h.includes("QUANTITY")) || "";
+      const calculatedQuantity = Number(row[primaryWeightKey]) || 0;
+  
+      // Insert record into Supabase while saving the dynamic properties
+      const [insertedItem] = await db.insert(inventoryItems).values({
+        sessionId: targetSessionId,
+        originalUrduText: aggregatedDataString, 
+        englishItemName: String(row["PARTY NAME"] || row["VEHICLE NUMBER"] || "FLAT RECORD").toUpperCase(),
+        quantity: calculatedQuantity,
+        unit: primaryWeightKey.includes("WEIGHT") ? "kg" : "pcs",
+        confidenceScore: dynamicResult.confidenceScore ? Number(dynamicResult.confidenceScore) : 0.95,
+      }).returning();
+  
+      // Attach payloads so the frontend grid can map columns on the fly
+      savedItems.push({
+        ...insertedItem,
+        dynamicHeaders: headers,
+        dynamicRow: row
+      });
+    }
+  
+    return savedItems;
   }
-
-  return savedItems;
-}
 /**
  * ROUTE 1: POST /api/inventory/extract (Text Processing)
  */
