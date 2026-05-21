@@ -1,29 +1,35 @@
 import { GoogleGenAI, Type, Schema } from '@google/genai';
+import { ExtractedInventoryItem } from '@audit-extractor/shared';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+// Initialize the modern Google Gen AI SDK
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+/**
+ * Parses mixed Urdu, Roman-Urdu stock text, or image buffers into a structured English data object.
+ * @param contentInput The raw text string or an image File Buffer recorded during the physical audit count.
+ * @param mimeType The file format string (e.g., 'image/png', 'image/jpeg') if a buffer is provided.
+ */
 export async function extractInventoryFromUrdu(contentInput: string | Buffer, mimeType: string | null = null) {
   
+  // Base core prompt instructions for the extraction engine
   const baseInstructions = `
-    You are an expert financial auditor and advanced document data modeling assistant.
-    Your objective is to analyze the provided weight slip / invoice voucher and flatten it into a horizontal database row.
+    You are an expert bilingual audit and inventory extraction assistant.
+    Your task is to analyze the following data recorded during a physical inventory count.
+    The source material may be written in standard Urdu script (Arabic/Persian characters) or Roman Urdu (Urdu spoken using English letters).
     
-    CRITICAL EXTRACTION GUIDELINES:
-    1. Scan the entire document for text pairs where a field label matches a value (e.g., 'صافی وزن' next to '1726', or 'SERIAL NUMBER' next to '138').
-    2. Dynamically generate an array of clean, English column headers that capture all discovered attributes.
-    3. Translate all Urdu or Roman-Urdu keys cleanly into English Capital Casing (e.g., 'صافی وزن' -> 'NET WEIGHT', 'گاڑی نمبر' -> 'VEHICLE NUMBER', 'پہلا وزن' -> 'GROSS WEIGHT', 'دوسرا وزن' -> 'TARE WEIGHT').
-    4. For EVERY document/image provided, you MUST construct an object inside the 'rows' array. The keys of this object must perfectly match your generated English headers.
-    5. Ensure values are mapped correctly: Keep full registration text for strings (e.g., 'LRT 3894'), but extract pure numbers for weights or digits (e.g., 1726, 138). Do not return empty objects.
+    Extract the item name, translate it clearly into English, find the numerical quantity, and identify the unit of measurement.
   `;
 
+  // Establish the content contents block matching the input type
   let contentsPayload: any[] = [];
 
   if (Buffer.isBuffer(contentInput) && mimeType) {
+    // Scenario A: Input is an uploaded image file buffer
     contentsPayload = [
-      baseInstructions + `\nExtract the data from this document image and format it into the requested horizontal rows structure.`,
+      baseInstructions + `\nAnalyze the attached image asset directly to extract the inventory item details.`,
       {
         inlineData: {
           data: contentInput.toString("base64"),
@@ -32,36 +38,44 @@ export async function extractInventoryFromUrdu(contentInput: string | Buffer, mi
       }
     ];
   } else {
+    // Scenario B: Input is a standard raw text string snippet
     contentsPayload = [
-      baseInstructions + `\nExtract the data from this raw text string:\n"${contentInput}"`
+      baseInstructions + `\nInput text string to analyze: "${contentInput}"`
     ];
   }
 
-  // 🎯 Updated Schema: Explicitly tracking an array of flat rows
-  const responseSchema: any = {
-    type: Type.OBJECT,
-    properties: {
-      headers: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
-        description: "The list of dynamically discovered English column headers. Example: ['SERIAL NUMBER', 'DATE', 'PARTY NAME', 'VEHICLE NUMBER', 'NET WEIGHT']"
-      },
-      rows: {
-        type: Type.ARRAY,
-        description: "An array containing one data object per processed invoice/image page.",
-        items: {
-          type: Type.OBJECT,
-          description: "Data object where keys perfectly match the items in the headers array.",
+  // Define a strict JSON schema so Gemini outputs exactly what our shared TypeScript engine expects
+  // Define a powerful array schema so Gemini can generate unlimited structured rows per image!
+  const responseSchema: Schema = {
+    type: Type.ARRAY,
+    description: "List of all structured audit data points, weights, metadata attributes, and line items found on the document.",
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        originalUrduText: { 
+          type: Type.STRING, 
+          description: "The raw handwritten text string or field name exactly as written in Urdu/Roman-Urdu on the paper. Example: 'صافی وزن 1726' or 'گاڑی نمبر LRT 3894' or 'پہلا وزن 1932'." 
+        },
+        englishItemName: { 
+          type: Type.STRING, 
+          description: "The field identifier or item name translated into clean English capitals. Examples: 'NET WEIGHT', 'VEHICLE NUMBER', 'GROSS WEIGHT', 'TARE WEIGHT', 'PARTY NAME', 'SERIAL NUMBER'." 
+        },
+        quantity: { 
+          type: Type.NUMBER, 
+          description: "The literal numerical count, weight value, or serial index value parsed from the specific field. If the value contains characters (like vehicle license plates '3894'), strip letters and return only the numerical digits." 
+        },
+        unit: { 
+          type: Type.STRING, 
+          description: "The unit of measurement. Use 'kg' for weights, 'No.' for serial indexes/vehicle digits, or 'text' if it's a structural name identifier." 
+        },
+        confidenceScore: { 
+          type: Type.NUMBER, 
+          description: "Your reading assurance level between 0.00 and 1.00." 
         }
       },
-      confidenceScore: {
-        type: Type.NUMBER,
-        description: "Overall extraction reliability score from 0.00 to 1.00."
-      }
-    },
-    required: ["headers", "rows", "confidenceScore"],
+      required: ["originalUrduText", "englishItemName", "quantity", "unit", "confidenceScore"],
+    }
   };
-
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -69,17 +83,18 @@ export async function extractInventoryFromUrdu(contentInput: string | Buffer, mi
       config: {
         responseMimeType: 'application/json',
         responseSchema: responseSchema,
-        temperature: 0.15,
+        temperature: 0.1, // Low temperature keeps extraction highly accurate and deterministic
       }
     });
 
     if (!response.text) {
-      throw new Error("AI Engine returned an empty extraction block.");
+      throw new Error("AI Engine returned an empty extraction result.");
     }
 
-    return JSON.parse(response.text);
+    // Return the safely parsed structured JSON object matching ExtractedInventoryItem
+    return JSON.parse(response.text) as ExtractedInventoryItem;
   } catch (error) {
-    console.error("Dynamic Table Extraction Engine Error:", error);
+    console.error("AI Extraction Engine Error:", error);
     throw error;
   }
 }

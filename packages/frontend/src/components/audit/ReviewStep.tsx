@@ -1,19 +1,7 @@
-import { useState } from "react";
 import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
-
-export interface LocalInventoryItem {
-  id: string;
-  originalUrduText: string;
-  englishItemName: string;
-  quantity: number;
-  unit: string;
-  confidenceScore: number;
-  dynamicHeaders?: string[];
-  dynamicRow?: Record<string, any>;
-}
 
 interface Props {
   items: any[];
@@ -22,59 +10,33 @@ interface Props {
 }
 
 export function ReviewStep({ items, setItems, onBack }: Props) {
-  // ✅ Extract headers safely by typecasting the first row array element explicitly
-  const firstItem = items && items.length > 0 ? items : null;
-  
-  const baseHeaders: string[] = firstItem && (firstItem as any).dynamicHeaders && (firstItem as any).dynamicHeaders.length > 0
-    ? (firstItem as any).dynamicHeaders
-    : ["ORIGINAL TEXT", "ENGLISH ITEM NAME", "QUANTITY", "UNIT"];
+  const headers = ["ORIGINAL TEXT", "ENGLISH ITEM NAME", "QUANTITY", "UNIT"];
 
-  // Delete a row from the queue
   const handleDeleteRow = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
     toast.success("Row removed from export queue.");
   };
 
-  // Handle cell updates safely on custom dynamic layout keys
-  const handleCellEdit = (rowIdx: number, headerKey: string, newValue: string) => {
+  const handleCellEdit = (rowIdx: number, field: string, value: string) => {
     setItems((prev) =>
-      prev.map((item, i) => {
-        if (i !== rowIdx) return item;
-        
-        const targetRow = item.dynamicRow || {};
-        return {
-          ...item,
-          dynamicRow: {
-            ...targetRow,
-            [headerKey]: newValue,
-          },
-        };
-      })
+      prev.map((item, i) => (i === rowIdx ? { ...item, [field]: value } : item))
     );
   };
 
-  // ✅ Fixed: Generates clean, matching columns inside your downloaded Excel ledger sheet
   const handleExportExcel = () => {
     if (items.length === 0) return;
 
-    const exportData = items.map((item) => {
-      if (item.dynamicRow) {
-        return item.dynamicRow; 
-      }
-      return {
-        "Original Text": item.originalUrduText,
-        "English Item Name": item.englishItemName,
-        "Quantity": item.quantity,
-        "Unit": item.unit,
-      };
-    });
+    const exportData = items.map((item) => ({
+      "Original Text Details": item.originalUrduText,
+      "English Item Name / Summary": item.englishItemName,
+      "Quantity": item.quantity,
+      "Unit": item.unit,
+    }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory Count");
-
-    const fileName = `Audit_Stock_Extract_${new Date().toISOString().slice(0,10)}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    XLSX.writeFile(workbook, `Audit_Stock_Reset_Extract_${new Date().toISOString().slice(0,10)}.xlsx`);
     toast.success("Excel ledger file downloaded successfully!");
   };
 
@@ -83,15 +45,13 @@ export function ReviewStep({ items, setItems, onBack }: Props) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight">Review & export</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Double-click any cell to edit details. Adjust any handwriting mismatches, then download.
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">Double-click any cell to edit details.</p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <Button variant="outline" size="sm" onClick={onBack} className="h-10 px-4">
             <ArrowLeft className="size-4 mr-2" /> Back
           </Button>
-          <Button onClick={handleExportExcel} size="sm" className="bg-emerald-600 hover:bg-emerald-500 h-10 px-5 text-white shadow-lg shadow-emerald-900/20">
+          <Button onClick={handleExportExcel} size="sm" className="bg-emerald-600 hover:bg-emerald-500 h-10 px-5 text-white shadow-lg">
             <Download className="size-4 mr-2" /> Download as Excel (.xlsx)
           </Button>
         </div>
@@ -102,43 +62,27 @@ export function ReviewStep({ items, setItems, onBack }: Props) {
           <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-white/[0.02] border-b border-white/5 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-                {baseHeaders.map((header: string) => (
-                  <th key={header} className="p-4">{header}</th>
-                ))}
+                {headers.map((h) => <th key={h} className="p-4">{h}</th>)}
                 <th className="p-4 text-center w-24">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-sm">
               {items.map((item, rowIdx) => (
                 <tr key={item.id || rowIdx} className="hover:bg-white/[0.01] transition-colors group">
-                  {baseHeaders.map((header: string) => {
-                    // ✅ Safely fallback lookups directly inside your custom layout properties array
-                    const cellValue = item.dynamicRow && item.dynamicRow[header] !== undefined
-                      ? item.dynamicRow[header]
-                      : (header === "ORIGINAL TEXT" ? item.originalUrduText 
-                        : header === "ENGLISH ITEM NAME" ? item.englishItemName 
-                        : header === "QUANTITY" ? item.quantity 
-                        : item.unit ?? "");
-
-                    return (
-                      <td key={header} className="p-4 min-w-[150px]">
-                        <input
-                          type="text"
-                          value={cellValue}
-                          onChange={(e) => handleCellEdit(rowIdx, header, e.target.value)}
-                          className="w-full bg-transparent focus:bg-white/5 focus:ring-1 focus:ring-primary/50 border-0 rounded px-2 py-1 transition-all outline-none font-medium text-foreground"
-                        />
-                      </td>
-                    );
-                  })}
+                  <td className="p-4 min-w-[250px]">
+                    <input type="text" value={item.originalUrduText || ""} onChange={(e) => handleCellEdit(rowIdx, "originalUrduText", e.target.value)} className="w-full bg-transparent border-0 rounded px-2 py-1 text-foreground" />
+                  </td>
+                  <td className="p-4 min-w-[250px]">
+                    <input type="text" value={item.englishItemName || ""} onChange={(e) => handleCellEdit(rowIdx, "englishItemName", e.target.value)} className="w-full bg-transparent border-0 rounded px-2 py-1 text-foreground" />
+                  </td>
+                  <td className="p-4">
+                    <input type="text" value={item.quantity || 0} onChange={(e) => handleCellEdit(rowIdx, "quantity", e.target.value)} className="w-full bg-transparent border-0 rounded px-2 py-1 text-foreground" />
+                  </td>
+                  <td className="p-4">
+                    <input type="text" value={item.unit || "kg"} onChange={(e) => handleCellEdit(rowIdx, "unit", e.target.value)} className="w-full bg-transparent border-0 rounded px-2 py-1 text-foreground" />
+                  </td>
                   <td className="p-4 text-center">
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteRow(rowIdx)}
-                      className="p-2 rounded-lg bg-white/5 opacity-40 group-hover:opacity-100 hover:bg-rose-500/20 hover:text-rose-300 border border-white/5 transition-all"
-                    >
-                      <Trash2 className="size-4" />
-                    </button>
+                    <button type="button" onClick={() => handleDeleteRow(rowIdx)} className="p-2 rounded-lg bg-white/5 text-muted-foreground hover:bg-rose-500/20 hover:text-rose-300 transition-all"><Trash2 className="size-4" /></button>
                   </td>
                 </tr>
               ))}

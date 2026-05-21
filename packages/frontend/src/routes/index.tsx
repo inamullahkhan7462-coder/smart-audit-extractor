@@ -3,7 +3,7 @@ import { useState } from "react";
 import { ScanLine } from "lucide-react";
 import { UploadStep } from "@/components/audit/UploadStep";
 import { ReviewStep } from "@/components/audit/ReviewStep";
-import { auditApi } from "@/lib/audit-api";
+import { auditApi, type InventoryItem } from "@/lib/audit-api";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -21,28 +21,22 @@ type Step = "upload" | "review";
 
 function Dashboard() {
   const [step, setStep] = useState<Step>("upload");
-  // 🎯 Use any[] to keep TypeScript from blocking incoming horizontal data arrays
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<InventoryItem[]>([]);
   const [busy, setBusy] = useState(false);
 
+  // ✅ Updated the argument keys from 'file' to 'files' to align with our new multi-upload schema
   const handleAnalyze = async ({ files, text }: { files: File[]; text: string }) => {
     setBusy(true);
     try {
       const result = files.length > 0
-        ? await auditApi.extractFile(files)
+        ? await auditApi.extractFile(files) // Passes the complete file array to the server
         : await auditApi.extractText(text);
       
-      console.log("Data successfully arrived at parent dashboard state wrapper:", result);
-      
-      if (result && result.length > 0) {
-        setItems(result);
-        setStep("review");
-        toast.success(`Extracted ${result.length} horizontal entry rows successfully!`);
-      } else {
-        toast.error("AI parsed data but found no populated dynamic rows.");
-      }
+      setItems(result);
+      setStep("review");
+      toast.success(`Extracted ${result.length} item${result.length === 1 ? "" : "s"} successfully!`);
     } catch (e) {
-      console.error("Dashboard analysis error pipeline stack:", e);
+      console.warn(e);
       toast.error("Extraction failed. Check API connection.");
     } finally {
       setBusy(false);
