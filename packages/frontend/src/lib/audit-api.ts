@@ -7,6 +7,9 @@ export interface InventoryItem {
   quantity: number;
   unit: string;
   confidenceScore: number;
+  // ✅ Add these two properties so TypeScript knows they exist
+  dynamicHeaders?: string[];
+  dynamicRow?: Record<string, any>;
 }
 
 const DEFAULT_SESSION_ID = "11111111-1111-1111-1111-111111111111";
@@ -24,14 +27,15 @@ export const auditApi = {
     if (!res.ok) throw new Error(`API ${res.status}`);
     
     const result = await res.json();
-    return result.data && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : [result]);
+    // ✅ Unwraps standard Vercel payload envelope securely
+    const dataArray = result.data || result;
+    return Array.isArray(dataArray) ? dataArray : [dataArray];
   },
 
   extractFile: async (files: File | File[]): Promise<InventoryItem[]> => {
     const fd = new FormData();
     const fileArray = Array.isArray(files) ? files : [files];
 
-    // Append every selected file under the key name 'files'
     fileArray.forEach((file) => {
       fd.append("files", file);
     });
@@ -44,6 +48,8 @@ export const auditApi = {
     if (!res.ok) throw new Error(`API ${res.status}`);
     
     const result = await res.json();
-    return result.data && Array.isArray(result.data) ? result.data : (Array.isArray(result) ? result : [result]);
+    // ✅ Unwraps bulk array collections securely
+    const dataArray = result.data || result;
+    return Array.isArray(dataArray) ? dataArray : [dataArray];
   },
 };
