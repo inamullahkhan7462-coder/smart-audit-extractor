@@ -88,13 +88,13 @@ export async function extractInventoryFromUrdu(contentInput: string | Buffer, mi
     });
 
     if (!response.text) {
-      throw new Error("AI Engine returned an empty extraction result.");
+        throw new Error("AI Engine returned an empty extraction result.");
+      }
+  
+      // ✅ Cast explicitly to any[] or an Array representation to prevent map loop errors
+      return JSON.parse(response.text) as any[];
+    } catch (error) {
+      console.error("AI Extraction Engine Error:", error);
+      throw error;
     }
-
-    // Return the safely parsed structured JSON object matching ExtractedInventoryItem
-    return JSON.parse(response.text) as ExtractedInventoryItem;
-  } catch (error) {
-    console.error("AI Extraction Engine Error:", error);
-    throw error;
-  }
 }

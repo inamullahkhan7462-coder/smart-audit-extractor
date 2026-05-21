@@ -74,36 +74,43 @@ router.post('/extract', async (req: any, res: any, next: any) => {
 /**
  * ROUTE 2: POST /api/inventory/extract/file (Bulk Image Processing)
  * Accepts a field named 'files' with up to 30 uploads simultaneously!
+ * Optimized for maximum concurrency speed!
  */
 router.post('/extract/file', upload.array('files', 30), async (req: any, res: any, next: any) => {
-  try {
-    const { sessionId } = req.body;
-    const files = req.files as Express.Multer.File[];
-
-    if (!files || files.length === 0 || !sessionId) {
-      return res.status(400).json({ error: "Missing required fields: files and sessionId are required." });
-    }
-
-    console.log(`Processing bulk pipeline for ${files.length} images...`);
-    let allCombinedSavedItems: any[] = [];
-
-    // Loop through every uploaded document sheet
-    for (const file of files) {
-      try {
-        const savedItemsFromSheet = await processAndSaveInventory(file.buffer, file.mimetype, sessionId);
-        allCombinedSavedItems = allCombinedSavedItems.concat(savedItemsFromSheet);
-      } catch (singleFileError: any) {
-        console.error(`Skipping broken/blurry image ${file.originalname}:`, singleFileError.message);
+    try {
+      const { sessionId } = req.body;
+      const files = req.files as Express.Multer.File[];
+  
+      if (!files || files.length === 0 || !sessionId) {
+        return res.status(400).json({ error: "Missing required fields: files and sessionId are required." });
       }
+  
+      console.log(`🚀 Starting high-speed concurrent pipeline for ${files.length} images...`);
+  
+      // 🏎️ Fire off all Gemini requests at the exact same time!
+      const processingPromises = files.map(async (file) => {
+        try {
+          return await processAndSaveInventory(file.buffer, file.mimetype, sessionId);
+        } catch (singleFileError: any) {
+          console.error(`❌ Skipping broken/blurry image ${file.originalname}:`, singleFileError.message);
+          return []; // Return an empty array so it doesn't crash the rest of the batch
+        }
+      });
+  
+      // Wait for all simultaneous extraction promises to complete
+      const resultsArray = await Promise.all(processingPromises);
+  
+      // Flatten our array of arrays cleanly into a standard list of saved rows
+      const allCombinedSavedItems = resultsArray.flat();
+  
+      console.log(`✅ Pipeline finished. Successfully extracted ${allCombinedSavedItems.length} records total.`);
+  
+      res.status(201).json({ 
+        success: true, 
+        data: allCombinedSavedItems 
+      });
+    } catch (error) {
+      next(error);
     }
-
-    res.status(201).json({ 
-      success: true, 
-      data: allCombinedSavedItems 
-    });
-  } catch (error) {
-    next(error);
-  }
-});
-
+  });
 export default router;
