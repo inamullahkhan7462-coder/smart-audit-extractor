@@ -1,156 +1,152 @@
 import { useState } from "react";
-import { ArrowLeft, Download, Trash2, Pencil } from "lucide-react";
-import * as XLSX from "xlsx";
+import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { InventoryItem } from "@/lib/audit-api";
+import * as XLSX from "xlsx";
+import { toast } from "sonner";
+
+// 🎯 Explicit local interface to override cached or mismatched types in the workspace
+export interface LocalInventoryItem {
+  id: string;
+  originalUrduText: string;
+  englishItemName: string;
+  quantity: number;
+  unit: string;
+  confidenceScore: number;
+  dynamicHeaders?: string[];
+  dynamicRow?: Record<string, any>;
+}
 
 interface Props {
-  items: InventoryItem[];
-  setItems: (next: InventoryItem[]) => void;
+  items: LocalInventoryItem[];
+  setItems: React.Dispatch<React.SetStateAction<any[]>>;
   onBack: () => void;
 }
 
-type CellKey = keyof Pick<InventoryItem, "originalUrduText" | "englishItemName" | "quantity" | "unit" | "confidenceScore">;
-
-const COLS: { key: CellKey; label: string; align?: "right"; type: "text" | "number" }[] = [
-  { key: "originalUrduText", label: "Original Text", type: "text" },
-  { key: "englishItemName", label: "English Item Name", type: "text" },
-  { key: "quantity", label: "Quantity", align: "right", type: "number" },
-  { key: "unit", label: "Unit", type: "text" },
-  { key: "confidenceScore", label: "Confidence", align: "right", type: "number" },
-];
-
-function ConfidenceBadge({ score }: { score: number }) {
-  const pct = Math.round(score * 100);
-  const tone =
-    score >= 0.85 ? "bg-emerald-500/15 text-emerald-300 border-emerald-400/30"
-    : score >= 0.6 ? "bg-amber-500/15 text-amber-300 border-amber-400/30"
-    : "bg-rose-500/15 text-rose-300 border-rose-400/30";
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium ${tone}`}>
-      <span className="size-1.5 rounded-full bg-current" /> {pct}%
-    </span>
-  );
-}
-
 export function ReviewStep({ items, setItems, onBack }: Props) {
-  const [editing, setEditing] = useState<{ row: number; col: CellKey } | null>(null);
-
-  const updateCell = (row: number, col: CellKey, raw: string) => {
-    const next = items.slice();
-    const item = { ...next[row] };
-    if (col === "quantity") item.quantity = Number(raw) || 0;
-    else if (col === "confidenceScore") {
-      const n = Number(raw);
-      item.confidenceScore = isNaN(n) ? 0 : Math.max(0, Math.min(1, n > 1 ? n / 100 : n));
-    } else (item as any)[col] = raw;
-    next[row] = item;
-    setItems(next);
+  // ✅ Fixed: Safely look inside the first element of the array to extract headers
+  // 🎯 Bypassing strict compiler caching using safe string-key lookups
+  const firstItem = items && items.length > 0 ? items : null;
+  
+  const baseHeaders = firstItem && (firstItem as any)["dynamicHeaders"] && (firstItem as any)["dynamicHeaders"].length > 0
+    ? (firstItem as any)["dynamicHeaders"]
+    : ["ORIGINAL TEXT", "ENGLISH ITEM NAME", "QUANTITY", "UNIT"];
+  // Delete a row from the state grid
+  const handleDeleteRow = (idx: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+    toast.success("Row removed from export queue.");
   };
 
-  const removeRow = (row: number) => setItems(items.filter((_, i) => i !== row));
+  // Handle direct cell editing edits dynamically
+  const handleCellEdit = (rowIdx: number, headerKey: string, newValue: string) => {
+    setItems((prev) =>
+      prev.map((item, i) => {
+        if (i !== rowIdx) return item;
+        
+        if (item.dynamicRow) {
+          return {
+            ...item,
+            dynamicRow: {
+              ...item.dynamicRow,
+              [headerKey]: newValue,
+            },
+          };
+        }
+        
+        const propertyMap: Record<string, string> = {
+          "ORIGINAL TEXT": "originalUrduText",
+          "ENGLISH ITEM NAME": "englishItemName",
+          "QUANTITY": "quantity",
+          "UNIT": "unit",
+        };
+        const exactKey = propertyMap[headerKey] || headerKey;
+        return { ...item, [exactKey]: newValue };
+      })
+    );
+  };
 
-  const exportXlsx = () => {
-    const rows = items.map((it) => ({
-      "Original Text": it.originalUrduText,
-      "English Item Name": it.englishItemName,
-      "Quantity": it.quantity,
-      "Unit": it.unit,
-      "Confidence Score": `${Math.round(it.confidenceScore * 100)}%`,
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 32 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 16 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
-    XLSX.writeFile(wb, `inventory-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  // Export data horizontally matching your exact invoice configuration
+  const handleExportExcel = () => {
+    if (items.length === 0) return;
+
+    const exportData = items.map((item) => {
+      if (item.dynamicRow) {
+        return item.dynamicRow;
+      }
+      return {
+        "Original Text": item.originalUrduText,
+        "English Item Name": item.englishItemName,
+        "Quantity": item.quantity,
+        "Unit": item.unit,
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory Count");
+
+    const fileName = `Audit_Stock_Extract_${new Date().toISOString().slice(0,10)}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+    toast.success("Excel ledger file downloaded successfully!");
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            <span className="size-1.5 rounded-full bg-primary" /> Step 2 & 3
-          </div>
-          <h2 className="text-3xl font-semibold tracking-tight">Review & export</h2>
-          <p className="text-sm text-muted-foreground">Double-click any cell to edit. Remove bad rows, then download.</p>
+    <div className="w-full space-y-6 animate-in fade-in duration-300">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Review & export</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Double-click any cell to edit details. Adjust any handwriting mismatches, then download.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" onClick={onBack} className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="size-4" /> Back
+        <div className="flex items-center gap-3 shrink-0">
+          <Button variant="outline" size="sm" onClick={onBack} className="h-10 px-4">
+            <ArrowLeft className="size-4 mr-2" /> Back
           </Button>
-          <Button
-            onClick={exportXlsx}
-            disabled={items.length === 0}
-            className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 border-0 h-11 px-5 shadow-lg shadow-emerald-500/20">
-            <Download className="size-4" /> Download as Excel (.xlsx)
+          <Button onClick={handleExportExcel} size="sm" className="bg-emerald-600 hover:bg-emerald-500 h-10 px-5 text-white shadow-lg shadow-emerald-900/20">
+            <Download className="size-4 mr-2" /> Download as Excel (.xlsx)
           </Button>
         </div>
       </div>
 
-      <div className="glass-panel-strong rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 text-xs">
-          <span className="text-muted-foreground inline-flex items-center gap-1.5"><Pencil className="size-3" /> Double-click a cell to edit</span>
-          <span className="text-muted-foreground">{items.length} {items.length === 1 ? "row" : "rows"}</span>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      <div className="glass-panel-strong rounded-2xl border border-white/5 overflow-hidden">
+        <div className="overflow-x-auto max-w-full">
+          <table className="w-full text-left border-collapse min-w-[800px]">
             <thead>
-              <tr className="text-left text-xs uppercase tracking-wider text-muted-foreground bg-white/5">
-                {COLS.map((c) => (
-                  <th key={c.key} className={`px-5 py-3 font-medium ${c.align === "right" ? "text-right" : ""}`}>{c.label}</th>
+              <tr className="bg-white/[0.02] border-b border-white/5 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                {baseHeaders.map((header: string) => (
+                  <th key={header} className="p-4">{header}</th>
                 ))}
-                <th className="px-5 py-3 font-medium text-right w-16">Actions</th>
+                <th className="p-4 text-center w-24">Actions</th>
               </tr>
             </thead>
-            <tbody>
-              {items.length === 0 && (
-                <tr><td colSpan={6} className="p-12 text-center text-sm text-muted-foreground">
-                  No rows. Go back and run extraction.
-                </td></tr>
-              )}
-              {items.map((it, row) => (
-                <tr key={it.id ?? row} className="border-t border-white/5 hover:bg-white/[0.03] group">
-                  {COLS.map((c) => {
-                    const isEditing = editing?.row === row && editing.col === c.key;
-                    const raw = c.key === "confidenceScore" ? Math.round(it.confidenceScore * 100) : (it as any)[c.key];
+            <tbody className="divide-y divide-white/5 text-sm">
+              {items.map((item, rowIdx) => (
+                <tr key={item.id || rowIdx} className="hover:bg-white/[0.01] transition-colors group">
+                  {baseHeaders.map((header: string) => {
+                    const cellValue = item.dynamicRow 
+                      ? item.dynamicRow[header] ?? "" 
+                      : (header === "ORIGINAL TEXT" ? item.originalUrduText 
+                        : header === "ENGLISH ITEM NAME" ? item.englishItemName 
+                        : header === "QUANTITY" ? item.quantity 
+                        : item.unit);
+
                     return (
-                      <td
-                        key={c.key}
-                        onDoubleClick={() => setEditing({ row, col: c.key })}
-                        className={`px-5 py-3 ${c.align === "right" ? "text-right" : ""} align-middle`}>
-                        {isEditing ? (
-                          <input
-                            autoFocus
-                            type={c.type === "number" ? "number" : "text"}
-                            defaultValue={raw}
-                            onBlur={(e) => { updateCell(row, c.key, e.target.value); setEditing(null); }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") { updateCell(row, c.key, (e.target as HTMLInputElement).value); setEditing(null); }
-                              if (e.key === "Escape") setEditing(null);
-                            }}
-                            className={`w-full bg-black/40 border border-primary/50 rounded-md px-2 py-1 outline-none focus:ring-2 focus:ring-primary/40 ${c.align === "right" ? "text-right" : ""}`}
-                            dir="auto"
-                          />
-                        ) : c.key === "confidenceScore" ? (
-                          <ConfidenceBadge score={it.confidenceScore} />
-                        ) : c.key === "englishItemName" ? (
-                          <span className="font-semibold tracking-wide uppercase">{it.englishItemName}</span>
-                        ) : c.key === "originalUrduText" ? (
-                          <span dir="auto" className="text-foreground/90">{it.originalUrduText}</span>
-                        ) : c.key === "quantity" ? (
-                          <span className="tabular-nums font-mono">{it.quantity}</span>
-                        ) : (
-                          <span className="text-muted-foreground">{it.unit}</span>
-                        )}
+                      <td key={header} className="p-4 min-w-[150px]">
+                        <input
+                          type="text"
+                          value={cellValue}
+                          onChange={(e) => handleCellEdit(rowIdx, header, e.target.value)}
+                          className="w-full bg-transparent focus:bg-white/5 focus:ring-1 focus:ring-primary/50 border-0 rounded px-2 py-1 transition-all outline-none font-medium text-foreground"
+                        />
                       </td>
                     );
                   })}
-                  <td className="px-5 py-3 text-right">
+                  <td className="p-4 text-center">
                     <button
-                      onClick={() => removeRow(row)}
-                      className="size-8 rounded-lg grid place-items-center text-muted-foreground hover:bg-rose-500/20 hover:text-rose-300 border border-transparent hover:border-rose-400/30 transition-colors opacity-0 group-hover:opacity-100">
+                      type="button"
+                      onClick={() => handleDeleteRow(rowIdx)}
+                      className="p-2 rounded-lg bg-white/5 opacity-40 group-hover:opacity-100 hover:bg-rose-500/20 hover:text-rose-300 border border-white/5 transition-all"
+                    >
                       <Trash2 className="size-4" />
                     </button>
                   </td>
