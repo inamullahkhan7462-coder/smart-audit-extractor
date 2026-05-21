@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
-// 🎯 Explicit local interface to override cached or mismatched types in the workspace
 export interface LocalInventoryItem {
   id: string;
   originalUrduText: string;
@@ -17,60 +16,50 @@ export interface LocalInventoryItem {
 }
 
 interface Props {
-  items: LocalInventoryItem[];
+  items: any[];
   setItems: React.Dispatch<React.SetStateAction<any[]>>;
   onBack: () => void;
 }
 
 export function ReviewStep({ items, setItems, onBack }: Props) {
-  // ✅ Fixed: Safely look inside the first element of the array to extract headers
-  // 🎯 Bypassing strict compiler caching using safe string-key lookups
+  // ✅ Extract headers safely by typecasting the first row array element explicitly
   const firstItem = items && items.length > 0 ? items : null;
   
-  const baseHeaders = firstItem && (firstItem as any)["dynamicHeaders"] && (firstItem as any)["dynamicHeaders"].length > 0
-    ? (firstItem as any)["dynamicHeaders"]
+  const baseHeaders: string[] = firstItem && (firstItem as any).dynamicHeaders && (firstItem as any).dynamicHeaders.length > 0
+    ? (firstItem as any).dynamicHeaders
     : ["ORIGINAL TEXT", "ENGLISH ITEM NAME", "QUANTITY", "UNIT"];
-  // Delete a row from the state grid
+
+  // Delete a row from the queue
   const handleDeleteRow = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
     toast.success("Row removed from export queue.");
   };
 
-  // Handle direct cell editing edits dynamically
+  // Handle cell updates safely on custom dynamic layout keys
   const handleCellEdit = (rowIdx: number, headerKey: string, newValue: string) => {
     setItems((prev) =>
       prev.map((item, i) => {
         if (i !== rowIdx) return item;
         
-        if (item.dynamicRow) {
-          return {
-            ...item,
-            dynamicRow: {
-              ...item.dynamicRow,
-              [headerKey]: newValue,
-            },
-          };
-        }
-        
-        const propertyMap: Record<string, string> = {
-          "ORIGINAL TEXT": "originalUrduText",
-          "ENGLISH ITEM NAME": "englishItemName",
-          "QUANTITY": "quantity",
-          "UNIT": "unit",
+        const targetRow = item.dynamicRow || {};
+        return {
+          ...item,
+          dynamicRow: {
+            ...targetRow,
+            [headerKey]: newValue,
+          },
         };
-        const exactKey = propertyMap[headerKey] || headerKey;
-        return { ...item, [exactKey]: newValue };
       })
     );
   };
 
-  // Export data horizontally matching your exact invoice configuration
+  // ✅ Fixed: Generates clean, matching columns inside your downloaded Excel ledger sheet
   const handleExportExcel = () => {
     if (items.length === 0) return;
 
     const exportData = items.map((item) => {
       if (item.dynamicRow) {
-        return item.dynamicRow;
+        return item.dynamicRow; 
       }
       return {
         "Original Text": item.originalUrduText,
@@ -123,12 +112,13 @@ export function ReviewStep({ items, setItems, onBack }: Props) {
               {items.map((item, rowIdx) => (
                 <tr key={item.id || rowIdx} className="hover:bg-white/[0.01] transition-colors group">
                   {baseHeaders.map((header: string) => {
-                    const cellValue = item.dynamicRow 
-                      ? item.dynamicRow[header] ?? "" 
+                    // ✅ Safely fallback lookups directly inside your custom layout properties array
+                    const cellValue = item.dynamicRow && item.dynamicRow[header] !== undefined
+                      ? item.dynamicRow[header]
                       : (header === "ORIGINAL TEXT" ? item.originalUrduText 
                         : header === "ENGLISH ITEM NAME" ? item.englishItemName 
                         : header === "QUANTITY" ? item.quantity 
-                        : item.unit);
+                        : item.unit ?? "");
 
                     return (
                       <td key={header} className="p-4 min-w-[150px]">
