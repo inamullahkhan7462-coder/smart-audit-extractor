@@ -30,32 +30,39 @@ function Dashboard() {
     try {
       let textToProcess = text;
 
-      // 🏎️ If files are uploaded, process them inside the user's browser for FREE!
       if (files.length > 0) {
-        toast.info(`Initializing browser OCR engine for ${files.length} document sheet(s)...`);
+        toast.info(`Initializing scanning engine for ${files.length} document(s)...`);
         
-        // Load web-worker dependencies straight from public CDN lines seamlessly
         const worker = await createWorker("eng");
         let combinedOcrText = "";
 
         for (const file of files) {
-          toast.info(`Scanning and extracting text from: ${file.name}`);
+          toast.info(`Scanning: ${file.name}`);
           const { data: { text: extractedText } } = await worker.recognize(file);
-          combinedOcrText += `\n--- Extracted from ${file.name} ---\n${extractedText}`;
+          
+          console.log(`Raw OCR text string read for ${file.name}:`, extractedText);
+
+          // Build a rich contextual payload combining the filename and the OCR output
+          combinedOcrText += `\n--- DOCUMENT SOURCE: ${file.name} ---\n`;
+          combinedOcrText += extractedText;
+          
+          // If the user pasted text in the manual box as well, blend it into the pipeline context
+          if (text.trim().length > 0) {
+            combinedOcrText += `\n--- USER MANUAL OVERRIDE NOTES ---\n${text}`;
+          }
         }
 
         await worker.terminate();
         textToProcess = combinedOcrText;
       }
 
-      if (!textToProcess.trim()) {
-        toast.error("Could not read any printable text data inside the uploaded assets.");
+      if (!textToProcess.trim() || textToProcess.trim().length < 4) {
+        toast.error("The scanner could not read clear text. Please type details into the manual box below and re-analyze.");
         setBusy(false);
         return;
       }
 
-      // Send the clean, compiled text string straight to our stable endpoint pipeline
-      toast.info("Sending structured text payload to Gemini engine...");
+      toast.info("Sending combined layout details to Gemini...");
       const result = await auditApi.extractText(textToProcess);
       
       if (result && result.length > 0) {
@@ -63,11 +70,11 @@ function Dashboard() {
         setStep("review");
         toast.success(`Successfully loaded ${result.length} stock line item records!`);
       } else {
-        toast.error("AI processed text but found zero matching records.");
+        toast.error("AI parsed the text but could not structure standard inventory rows.");
       }
     } catch (e: any) {
       console.error("Extraction pipeline crash tracker:", e);
-      toast.error(e.message || "Extraction failed. Check API connection line lines.");
+      toast.error(e.message || "Extraction failed. Check API connection lines.");
     } finally {
       setBusy(false);
     }
