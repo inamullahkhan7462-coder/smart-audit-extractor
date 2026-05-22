@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { createWorker } from 'tesseract.js';
 import { db } from '../db/index.js';
 import { inventoryItems, auditSessions } from '../db/schema.js';
 import { extractInventoryFromUrdu } from '../services/aiEngine.js';
@@ -8,11 +9,9 @@ const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 /**
- * Core Helper to process a single text input or image buffer
- * Supports multiple items extracted from a single source!
+ * Core Helper to process text strings through Gemini and save to Supabase
  */
-async function processAndSaveInventory(rawTextOrBuffer: string | Buffer, mimeType: string | null, sessionId: string) {
-  // 1. Resolve a valid session ID to satisfy foreign key constraints
+async function processAndSaveInventory(rawText: string, sessionId: string) {
   const actualSessions = await db.select().from(auditSessions);
   let targetSessionId = sessionId;
 
@@ -26,22 +25,19 @@ async function processAndSaveInventory(rawTextOrBuffer: string | Buffer, mimeTyp
     targetSessionId = actualSessions[actualSessions.length - 1].id;
   }
 
-  // 2. Call the upgraded Gemini Engine (Returns an array of extracted items now!)
-  console.log("Sending content payload to Gemini...");
-  const extractedArray = await extractInventoryFromUrdu(rawTextOrBuffer, mimeType);
-  console.log("Gemini parsed array output:", extractedArray);
+  console.log("Sending clean text payload to Gemini...");
+  const extractedArray = await extractInventoryFromUrdu(rawText);
+  console.log("Gemini parsed output:", extractedArray);
 
-  // Normalize to ensure we are dealing with an array loop
   const itemsList = Array.isArray(extractedArray) ? extractedArray : [extractedArray];
   const savedItems = [];
 
-  // 3. Loop through every single parsed item row found by Gemini and write it to Supabase
   for (const item of itemsList) {
     if (!item || (!item.englishItemName && !item.originalUrduText)) continue;
 
     const [insertedItem] = await db.insert(inventoryItems).values({
       sessionId: targetSessionId,
-      originalUrduText: item.originalUrduText || (mimeType ? "Extracted from Image" : String(rawTextOrBuffer).substring(0, 100)),
+      originalUrduText: item.originalUrduText || rawText.substring(0, 100),
       englishItemName: item.englishItemName || "UNCLASSIFIED ITEM",
       quantity: Number(item.quantity) || 0,
       unit: item.unit || "pcs",
@@ -64,7 +60,7 @@ router.post('/extract', async (req: any, res: any, next: any) => {
       return res.status(400).json({ error: "Missing required fields: rawText and sessionId are required." });
     }
 
-    const insertedItems = await processAndSaveInventory(rawText, null, sessionId);
+    const insertedItems = await processAndSaveInventory(rawText, sessionId);
     res.status(201).json({ success: true, data: insertedItems });
   } catch (error) {
     next(error); 
@@ -72,45 +68,54 @@ router.post('/extract', async (req: any, res: any, next: any) => {
 });
 
 /**
- * ROUTE 2: POST /api/inventory/extract/file (Bulk Image Processing)
- * Accepts a field named 'files' with up to 30 uploads simultaneously!
- * Optimized for maximum concurrency speed!
+ * ROUTE 2: POST /api/inventory/extract/file (FREE Local OCR + High Speed)
  */
 router.post('/extract/file', upload.array('files', 30), async (req: any, res: any, next: any) => {
-    try {
-      const { sessionId } = req.body;
-      const files = req.files as Express.Multer.File[];
-  
-      if (!files || files.length === 0 || !sessionId) {
-        return res.status(400).json({ error: "Missing required fields: files and sessionId are required." });
-      }
-  
-      console.log(`🚀 Starting high-speed concurrent pipeline for ${files.length} images...`);
-  
-      // 🏎️ Fire off all Gemini requests at the exact same time!
-      const processingPromises = files.map(async (file) => {
-        try {
-          return await processAndSaveInventory(file.buffer, file.mimetype, sessionId);
-        } catch (singleFileError: any) {
-          console.error(`❌ Skipping broken/blurry image ${file.originalname}:`, singleFileError.message);
-          return []; // Return an empty array so it doesn't crash the rest of the batch
-        }
-      });
-  
-      // Wait for all simultaneous extraction promises to complete
-      const resultsArray = await Promise.all(processingPromises);
-  
-      // Flatten our array of arrays cleanly into a standard list of saved rows
-      const allCombinedSavedItems = resultsArray.flat();
-  
-      console.log(`✅ Pipeline finished. Successfully extracted ${allCombinedSavedItems.length} records total.`);
-  
-      res.status(201).json({ 
-        success: true, 
-        data: allCombinedSavedItems 
-      });
-    } catch (error) {
-      next(error);
+  try {
+    const { sessionId } = req.body;
+    const files = req.files as Express.Multer.File[];
+
+    if (!files || files.length === 0 || !sessionId) {
+      return res.status(400).json({ error: "Missing required fields: files and sessionId are required." });
     }
-  });
+
+    console.log(`⏳ Processing local OCR for ${files.length} images...`);
+    let allCombinedSavedItems: any[] = [];
+
+    // Initialize Tesseract Worker locally
+    const worker = await createWorker('eng'); // Supports English/Roman-Urdu layouts natively
+
+    for (const file of files) {
+      try {
+        console.log(`Reading text locally from file: ${file.originalname}`);
+        
+        // 1. Extract text from image buffer LOCALLY (Costs $0!)
+        const { data: { text } } = await worker.recognize(file.buffer);
+        console.log(`📝 Local OCR extracted text raw sample:\n${text}`);
+
+        if (!text.trim()) {
+          console.warn(`Skipping empty text extraction for ${file.originalname}`);
+          continue;
+        }
+
+        // 2. Pass the extracted text to our standard backend processing loop
+        const savedItemsFromSheet = await processAndSaveInventory(text, sessionId);
+        allCombinedSavedItems = allCombinedSavedItems.concat(savedItemsFromSheet);
+        
+      } catch (singleFileError: any) {
+        console.error(`❌ Error in local processing for ${file.originalname}:`, singleFileError.message);
+      }
+    }
+
+    await worker.terminate(); // Clean up worker memory
+
+    res.status(201).json({ 
+      success: true, 
+      data: allCombinedSavedItems 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
