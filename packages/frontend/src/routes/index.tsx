@@ -3,7 +3,8 @@ import { useState } from "react";
 import { ScanLine } from "lucide-react";
 import { UploadStep } from "@/components/audit/UploadStep";
 import { ReviewStep } from "@/components/audit/ReviewStep";
-import { auditApi, type InventoryItem } from "@/lib/audit-api";
+import { auditApi } from "@/lib/audit-api";
+import { createWorker } from "tesseract.js";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -21,23 +22,52 @@ type Step = "upload" | "review";
 
 function Dashboard() {
   const [step, setStep] = useState<Step>("upload");
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [items, setItems] = useState<any[]>([]);
   const [busy, setBusy] = useState(false);
 
-  // ✅ Updated the argument keys from 'file' to 'files' to align with our new multi-upload schema
   const handleAnalyze = async ({ files, text }: { files: File[]; text: string }) => {
     setBusy(true);
     try {
-      const result = files.length > 0
-        ? await auditApi.extractFile(files) // Passes the complete file array to the server
-        : await auditApi.extractText(text);
+      let textToProcess = text;
+
+      // 🏎️ If files are uploaded, process them inside the user's browser for FREE!
+      if (files.length > 0) {
+        toast.info(`Initializing browser OCR engine for ${files.length} document sheet(s)...`);
+        
+        // Load web-worker dependencies straight from public CDN lines seamlessly
+        const worker = await createWorker("eng");
+        let combinedOcrText = "";
+
+        for (const file of files) {
+          toast.info(`Scanning and extracting text from: ${file.name}`);
+          const { data: { text: extractedText } } = await worker.recognize(file);
+          combinedOcrText += `\n--- Extracted from ${file.name} ---\n${extractedText}`;
+        }
+
+        await worker.terminate();
+        textToProcess = combinedOcrText;
+      }
+
+      if (!textToProcess.trim()) {
+        toast.error("Could not read any printable text data inside the uploaded assets.");
+        setBusy(false);
+        return;
+      }
+
+      // Send the clean, compiled text string straight to our stable endpoint pipeline
+      toast.info("Sending structured text payload to Gemini engine...");
+      const result = await auditApi.extractText(textToProcess);
       
-      setItems(result);
-      setStep("review");
-      toast.success(`Extracted ${result.length} item${result.length === 1 ? "" : "s"} successfully!`);
-    } catch (e) {
-      console.warn(e);
-      toast.error("Extraction failed. Check API connection.");
+      if (result && result.length > 0) {
+        setItems(result);
+        setStep("review");
+        toast.success(`Successfully loaded ${result.length} stock line item records!`);
+      } else {
+        toast.error("AI processed text but found zero matching records.");
+      }
+    } catch (e: any) {
+      console.error("Extraction pipeline crash tracker:", e);
+      toast.error(e.message || "Extraction failed. Check API connection line lines.");
     } finally {
       setBusy(false);
     }
@@ -62,9 +92,7 @@ function Dashboard() {
         </header>
 
         <main className="relative">
-          <div
-            key={step}
-            className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div key={step} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
             {step === "upload" ? (
               <UploadStep busy={busy} onAnalyze={handleAnalyze} />
             ) : (
