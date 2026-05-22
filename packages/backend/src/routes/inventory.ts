@@ -67,9 +67,7 @@ router.post('/extract', async (req: any, res: any, next: any) => {
   }
 });
 
-/**
- * ROUTE 2: POST /api/inventory/extract/file (FREE Local OCR + High Speed)
- */
+
 /**
  * ROUTE 2: POST /api/inventory/extract/file (FREE Cloud-Hosted CDN OCR)
  * Configured explicitly to bypass Vercel serverless missing-file (.wasm) crashes!
@@ -88,7 +86,6 @@ router.post('/extract/file', upload.array('files', 30), async (req: any, res: an
   
       // ✅ Initialize Tesseract Worker with CDN links so Vercel never crashes over missing .wasm files
       const worker = await createWorker('eng', 1, {
-        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@v5.1.0/dist/worker.min.js',
         corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v5.1.0/tesseract-core-relaxedsimd.wasm.js',
         langPath: 'https://tessdata.projectnaptha.com/4.0.0_best'
       });
